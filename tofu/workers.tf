@@ -19,10 +19,6 @@ resource "proxmox_virtual_environment_vm" "worker" {
   tags      = ["k8s", "worker", "tofu"]
   on_boot   = true # tự bật cùng host (như VM 201)
 
-  clone {
-    vm_id = var.template_vm_id
-    full  = true
-  }
 
   agent { enabled = true } # qemu-guest-agent: tắt VM sạch, Proxmox thấy IP
 
@@ -41,9 +37,11 @@ resource "proxmox_virtual_environment_vm" "worker" {
   disk {
     datastore_id = "local"
     interface    = "scsi0"
-    size         = var.worker_disk_gb
-    file_format  = "raw"
-    discard      = "on"
+    # Tạo đĩa từ cloud image (images.tf) thay vì clone template. Chỉ dùng lúc TẠO VM.
+    import_from = proxmox_download_file.ubuntu_noble.id
+    size        = var.worker_disk_gb
+    file_format = "raw"
+    discard     = "on"
   }
 
   network_device {
@@ -101,7 +99,8 @@ resource "proxmox_virtual_environment_vm" "worker" {
   }
 
   lifecycle {
-    # Thay đổi snippet/template SAU khi tạo không nên ép tạo lại VM đang chạy.
-    ignore_changes = [clone, initialization[0].vendor_data_file_id]
+    # Đổi snippet/image SAU khi tạo không được ép tạo lại VM đang chạy.
+    # clone: worker-1/2 được tạo từ template 9000 cũ, state còn lưu khối clone.
+    ignore_changes = [clone, disk[0].import_from, initialization[0].vendor_data_file_id]
   }
 }

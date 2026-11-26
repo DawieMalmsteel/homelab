@@ -35,7 +35,3 @@ variable "node_name" {
   default = "nixos" # tên node Proxmox (pvesh get /nodes)
 }
 
-variable "template_vm_id" {
-  type    = number
-  default = 9000 # ubuntu-2404-tpl
-}

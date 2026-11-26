@@ -36,6 +36,15 @@ in
   };
   nixpkgs.overlays = [ proxmox-nixos.overlays.x86_64-linux ];
 
+  # Cloud-init snippet cho VM K8s: NixOS chép file trong repo vào storage "local" mỗi lần rebuild.
+  # (Proxmox không có API upload snippet -> để host, nơi đã do NixOS quản lý, đặt file.)
+  # Activation script chạy mỗi lần switch + boot -> luôn ghi đè bằng bản trong repo.
+  # (Không dùng systemd.tmpfiles C/C+: chúng chỉ chép khi file đích CHƯA tồn tại.)
+  # k8s-worker.yaml (chứa token join) KHÔNG ở đây: sinh bởi tofu/gen-worker-snippet.sh.
+  system.activationScripts.k8sNodeSnippet = ''
+    install -D -m 0644 -o root -g root ${./k8s-node.yaml} /var/lib/vz/snippets/k8s-node.yaml
+  '';
+
   # proxmox-nixos chỉ đưa genisoimage/bash vào PATH của vài service. Thiếu chúng thì service không tạo
   # được ổ cloud-init khi bật VM. Đã gặp (2026-11-26): `qm reboot 201` tắt VM xong nhưng qmeventd
   # (service lo bước "bật lại") lỗi "No such file or directory" -> VM nằm stopped, API K8s down.
@@ -84,6 +93,14 @@ in
       dhcp-range = "10.10.10.100,10.10.10.200,12h";
       dhcp-option = [ "option:router,${bridgeIP}" "option:dns-server,${bridgeIP}" ];
     };
+  };
+
+  # ---------- Tailscale (VPN riêng) ----------
+  # Laptop vào tailnet: ở ngoài nhà vẫn ssh / mở Proxmox UI qua tên "nixos" (MagicDNS).
+  # App trong K8s KHÔNG đi qua đây mà qua Tailscale Kubernetes Operator (argocd/apps/tailscale-operator.yaml).
+  services.tailscale = {
+    enable = true;
+    openFirewall = true; # UDP 41641: kết nối trực tiếp P2P thay vì đi vòng qua relay (DERP)
   };
 
   # ---------- Monitoring ----------
@@ -176,6 +193,7 @@ in
     k9s
     kubernetes-helm # helm: cài chart (Traefik, kube-prometheus-stack)
     kitty # terminal emulator (GPU)
+    wl-clipboard # wl-copy / wl-paste: clipboard trên GNOME Wayland
     opentofu # IaC (fork mã nguồn mở của Terraform), quản lý VM worker trong tofu/
     jq
     openssl
