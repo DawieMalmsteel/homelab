@@ -36,6 +36,14 @@ in
   };
   nixpkgs.overlays = [ proxmox-nixos.overlays.x86_64-linux ];
 
+  # proxmox-nixos chỉ đưa genisoimage/bash vào PATH của vài service. Thiếu chúng thì service không tạo
+  # được ổ cloud-init khi bật VM. Đã gặp (2026-11-26): `qm reboot 201` tắt VM xong nhưng qmeventd
+  # (service lo bước "bật lại") lỗi "No such file or directory" -> VM nằm stopped, API K8s down.
+  # KHÔNG thêm pve-guests: đổi unit của nó -> NixOS restart nó -> ExecStop TẮT TOÀN BỘ VM.
+  systemd.services = lib.genAttrs [ "qmeventd" "pvedaemon" "pvescheduler" ] (_: {
+    path = [ pkgs.bash pkgs.cdrkit pkgs.qemu-utils ];
+  });
+
   # Cache build sẵn của proxmox-nixos (không có thì phải tự compile, rất lâu).
   nix.settings = {
     # Bật lệnh nix mới (nix build/run/shell/flake ...) và flakes.
