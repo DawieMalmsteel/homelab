@@ -1,0 +1,88 @@
+# App mẫu: kiểm tra trọn luồng Ingress -> Service -> Pod, cùng PVC (local-path).
+# Mở: http://hello.192.168.101.14.nip.io  (nip.io: DNS công cộng, tên *.IP.nip.io luôn trả về IP đó)
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: demo
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: hello-data
+  namespace: demo
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 1Gi
+  # không ghi storageClassName -> dùng StorageClass mặc định (local-path)
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hello
+  namespace: demo
+spec:
+  replicas: 2
+  selector:
+    matchLabels: { app: hello }
+  template:
+    metadata:
+      labels: { app: hello }
+    spec:
+      containers:
+        - name: whoami
+          image: traefik/whoami:v1.11
+          ports: [{ containerPort: 80 }]
+          resources:
+            requests: { cpu: 10m, memory: 16Mi }
+            limits: { memory: 64Mi }
+---
+# Pod riêng dùng PVC (RWO của local-path chỉ gắn được vào 1 node).
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pvc-test
+  namespace: demo
+spec:
+  containers:
+    - name: writer
+      image: busybox:1.37
+      command: ["sh", "-c", "date >> /data/log.txt; cat /data/log.txt; sleep 3600"]
+      volumeMounts: [{ name: data, mountPath: /data }]
+  volumes:
+    - name: data
+      persistentVolumeClaim: { claimName: hello-data }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: hello
+  namespace: demo
+spec:
+  selector: { app: hello }
+  ports: [{ port: 80, targetPort: 80 }]
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: hello
+  namespace: demo
+spec:
+  # không ghi ingressClassName -> dùng IngressClass mặc định (traefik)
+  rules:
+    - host: hello.192.168.101.14.nip.io
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service: { name: hello, port: { number: 80 } }
+    # Rule không có host: gọi thẳng http://192.168.101.14/ (không cần DNS, tiện cho điện thoại).
+    # Khi có app thật, nên bỏ rule này để IP trần không lộ app nào.
+    - http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service: { name: hello, port: { number: 80 } }

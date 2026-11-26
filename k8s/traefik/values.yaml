@@ -1,0 +1,14 @@
+# Helm values cho chart traefik/traefik (v43.x)
+ingressClass:
+  enabled: true
+  isDefaultClass: true   # Ingress không ghi ingressClassName vẫn được Traefik xử lý
+service:
+  spec:
+    type: LoadBalancer   # chart v43: kiểu Service nằm trong service.spec
+  annotations:
+    metallb.io/loadBalancerIPs: 10.10.10.50   # IP cố định -> port forward trên laptop trỏ vào đây
+providers:
+  kubernetesIngress:
+    enabled: true
+  kubernetesGateway:
+    enabled: false       # bật sau nếu muốn học Gateway API

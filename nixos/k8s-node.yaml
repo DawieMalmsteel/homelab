@@ -1,0 +1,52 @@
+#cloud-config
+# Vendor-data cho mọi node K8s (Proxmox: --cicustom vendor=local:snippets/k8s-node.yaml).
+# Dùng "vendor" thay vì "user" để vẫn giữ user/ssh key/IP mà Proxmox tự sinh từ ciuser/sshkeys/ipconfig0.
+# Chạy MỘT LẦN ở lần boot đầu. Xem log trong VM: /var/log/cloud-init-output.log
+
+package_update: true
+packages:
+  - qemu-guest-agent # để Proxmox thấy IP, shutdown VM sạch
+  - apt-transport-https
+  - ca-certificates
+  - curl
+  - gpg
+
+write_files:
+  # Module kernel cho container: overlay (filesystem của image), br_netfilter (iptables thấy traffic qua bridge của pod)
+  - path: /etc/modules-load.d/k8s.conf
+    content: |
+      overlay
+      br_netfilter
+  # Cho phép node route traffic giữa pod/service
+  - path: /etc/sysctl.d/99-k8s.conf
+    content: |
+      net.bridge.bridge-nf-call-iptables  = 1
+      net.bridge.bridge-nf-call-ip6tables = 1
+      net.ipv4.ip_forward                 = 1
+
+runcmd:
+  - systemctl enable --now qemu-guest-agent
+  - modprobe overlay
+  - modprobe br_netfilter
+  - sysctl --system
+  - swapoff -a # kubelet mặc định không chạy khi có swap (cloud image vốn không có swap)
+
+  # --- containerd (container runtime) từ repo Docker: bản 2.x, K8s mới cần containerd >= 2.0 ---
+  - install -m 0755 -d /etc/apt/keyrings
+  - curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+  - echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu noble stable" > /etc/apt/sources.list.d/docker.list
+  # --- kubelet/kubeadm/kubectl từ repo chính thức pkgs.k8s.io, khoá ở minor v1.37 ---
+  - curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.37/deb/Release.key | gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+  - echo "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v1.37/deb/ /" > /etc/apt/sources.list.d/kubernetes.list
+  - apt-get update
+  - DEBIAN_FRONTEND=noninteractive apt-get install -y containerd.io kubelet kubeadm kubectl
+  # Giữ nguyên version, tránh apt upgrade vô tình nâng K8s (nâng cấp phải đi qua kubeadm upgrade)
+  - apt-mark hold kubelet kubeadm kubectl containerd.io
+
+  # Config mặc định của gói containerd.io TẮT plugin CRI (dành cho Docker) -> sinh lại config đầy đủ
+  # và bật SystemdCgroup cho khớp cgroup driver "systemd" mà kubeadm cấu hình cho kubelet.
+  - containerd config default > /etc/containerd/config.toml
+  - sed -i 's/SystemdCgroup = false/SystemdCgroup = true/' /etc/containerd/config.toml
+  - systemctl restart containerd
+  - systemctl enable kubelet # kubelet sẽ crash-loop cho tới khi kubeadm init/join, đó là bình thường
+  - touch /var/lib/k8s-node-ready

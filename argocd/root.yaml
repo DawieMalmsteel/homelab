@@ -1,0 +1,22 @@
+# App-of-apps: Application "root" theo dõi thư mục argocd/apps/ trong repo.
+# Mỗi file trong argocd/apps/ là một Application con -> ArgoCD tạo/cập nhật/xoá theo Git.
+# Chỉ apply file này BẰNG TAY một lần (bootstrap); từ đó mọi thứ đi qua Git:
+#   kubectl --kubeconfig ~/.kube/homelab.yaml apply -f argocd/root.yaml
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: root
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: REPO_URL
+    targetRevision: main
+    path: argocd/apps
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    automated:
+      prune: true    # xoá file Application khỏi Git -> ArgoCD xoá Application đó
+      selfHeal: true # ai sửa tay trên cluster -> ArgoCD sửa lại theo Git

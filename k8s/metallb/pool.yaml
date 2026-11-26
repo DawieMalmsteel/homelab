@@ -1,0 +1,20 @@
+# Dải IP MetalLB được cấp cho Service type=LoadBalancer (nằm trong mạng NAT vmbr0 10.10.10.0/24).
+# Tránh: .1 (host), .11-.13 (node K8s), .100-.200 (DHCP dnsmasq).
+apiVersion: metallb.io/v1beta1
+kind: IPAddressPool
+metadata:
+  name: vmbr0-pool
+  namespace: metallb-system
+spec:
+  addresses:
+    - 10.10.10.50-10.10.10.69
+---
+# L2 mode: node đang giữ IP sẽ trả lời ARP "IP này ở MAC của tôi" trên vmbr0.
+apiVersion: metallb.io/v1beta1
+kind: L2Advertisement
+metadata:
+  name: vmbr0-l2
+  namespace: metallb-system
+spec:
+  ipAddressPools:
+    - vmbr0-pool

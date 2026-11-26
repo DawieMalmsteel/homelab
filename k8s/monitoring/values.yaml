@@ -1,0 +1,89 @@
+# Helm values: prometheus-community/kube-prometheus-stack (chart 93.x)
+# Cài: helm upgrade --install monitoring prometheus-community/kube-prometheus-stack \
+#        --version 93.11.1 -n monitoring -f k8s/monitoring/values.yaml
+#
+# Luồng: Prometheus Operator đọc các CRD (ServiceMonitor, PodMonitor, PrometheusRule)
+#   -> sinh cấu hình scrape cho Prometheus -> Prometheus kéo /metrics mỗi 30s, lưu vào TSDB (PVC)
+#   -> Grafana query Prometheus để vẽ dashboard; Alertmanager nhận cảnh báo từ Prometheus.
+# Tài nguyên giới hạn chặt vì worker chỉ có 3GB RAM.
+
+# ---------- Prometheus ----------
+prometheus:
+  prometheusSpec:
+    scrapeInterval: 30s
+    retention: 7d          # giữ dữ liệu 7 ngày
+    retentionSize: 8GB     # hoặc tới 8GB, cái nào tới trước
+    resources:
+      requests: { cpu: 100m, memory: 512Mi }
+      limits: { memory: 1Gi }
+    storageSpec:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: local-path
+          accessModes: [ReadWriteOnce]
+          resources:
+            requests: { storage: 10Gi }
+    # Lấy MỌI ServiceMonitor/PodMonitor/PrometheusRule trong cluster, không chỉ cái có label của release này
+    # -> app sau này chỉ cần tạo ServiceMonitor là được scrape.
+    serviceMonitorSelectorNilUsesHelmValues: false
+    podMonitorSelectorNilUsesHelmValues: false
+    ruleSelectorNilUsesHelmValues: false
+    # Laptop NixOS (host Proxmox) không nằm trong K8s -> khai báo tay.
+    # job_name "node-exporter" để hiện chung trong dashboard "Node Exporter / Nodes".
+    additionalScrapeConfigs:
+      - job_name: node-exporter
+        static_configs:
+          - targets: ["10.10.10.1:9100"]
+            labels:
+              instance: nixos-host
+
+# ---------- Grafana ----------
+grafana:
+  admin:
+    existingSecret: grafana-admin   # tạo riêng (password ngẫu nhiên), không nằm trong Git
+    userKey: admin-user
+    passwordKey: admin-password
+  ingress:
+    enabled: true
+    ingressClassName: traefik
+    hosts: [grafana.192.168.101.14.nip.io]
+  persistence:                       # giữ dashboard bạn tự tạo qua các lần restart
+    enabled: true
+    storageClassName: local-path
+    size: 1Gi
+  defaultDashboardsTimezone: Asia/Ho_Chi_Minh
+  resources:
+    requests: { cpu: 50m, memory: 128Mi }
+    limits: { memory: 384Mi }
+
+# ---------- Alertmanager ----------
+alertmanager:
+  alertmanagerSpec:
+    resources:
+      requests: { cpu: 10m, memory: 32Mi }
+      limits: { memory: 128Mi }
+
+# ---------- Thành phần phụ ----------
+prometheusOperator:
+  resources:
+    requests: { cpu: 50m, memory: 64Mi }
+    limits: { memory: 256Mi }
+kube-state-metrics:      # trạng thái object K8s (pod restart, deployment replicas, ...)
+  resources:
+    requests: { cpu: 10m, memory: 32Mi }
+    limits: { memory: 128Mi }
+prometheus-node-exporter: # CPU/RAM/disk của từng node (DaemonSet)
+  resources:
+    requests: { cpu: 10m, memory: 24Mi }
+    limits: { memory: 64Mi }
+
+# ---------- Control-plane (kubeadm) ----------
+# Mặc định kubeadm chỉ mở metrics ở 127.0.0.1. Đã đổi sang 0.0.0.0 trên cp1:
+#   /etc/kubernetes/manifests/{kube-controller-manager,kube-scheduler}.yaml : --bind-address=0.0.0.0
+#   /etc/kubernetes/manifests/etcd.yaml : --listen-metrics-urls=http://0.0.0.0:2381
+#   ConfigMap kube-system/kube-proxy : metricsBindAddress "0.0.0.0:10249"
+# Lưu ý: `kubeadm upgrade` sinh lại manifest -> phải sửa lại (hoặc đưa vào ClusterConfiguration.extraArgs).
+kubeEtcd:
+  service:
+    port: 2381
+    targetPort: 2381

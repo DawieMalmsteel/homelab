@@ -1,0 +1,8 @@
+# Provider tải về (tofu init tạo lại được)
+.terraform/
+# State: OpenTofu ghi lại "nó đang quản lý VM nào". Giữ trên máy, không đưa lên Git public.
+# Mất file này = tofu "quên" các VM (VM vẫn chạy, phải tofu import lại).
+terraform.tfstate
+terraform.tfstate.backup
+*.tfplan
+# .terraform.lock.hcl THÌ COMMIT (khoá version provider, giống flake.lock)

@@ -1,0 +1,16 @@
+# UI ArgoCD qua Traefik. argocd-server chạy HTTP (server.insecure=true trong argocd-cmd-params-cm),
+# Traefik nhận request ở :80/:443 rồi chuyển vào port 80 của service argocd-server.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: argocd-server
+  namespace: argocd
+spec:
+  rules:
+    - host: argocd.192.168.101.14.nip.io
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service: { name: argocd-server, port: { number: 80 } }
