@@ -4,7 +4,8 @@
 - [2. Bật/tắt homelab](#2-bậttắt-homelab)
 - [3. Kiểm tra sau khi bật](#3-kiểm-tra-sau-khi-bật)
 - [4. Sự cố thường gặp](#4-sự-cố-thường-gặp)
-- [5. Thành phần ngoài Git](#5-thành-phần-ngoài-git)
+- [5. Tofu quản lý gì](#5-tofu-quản-lý-gì)
+- [6. Thành phần ngoài Git](#6-thành-phần-ngoài-git)
 
 Mọi lệnh dưới đây chạy **trên laptop NixOS** (`ssh dwcks@192.168.101.14` hoặc terminal trên máy).
 
@@ -23,9 +24,9 @@ tofu apply                 # gõ yes
 |---|---|---|---|---|
 | 1..4 | `k8s-worker-<i>` | `210+i` | `10.10.10.(20+i)` | 2 vCPU, 3GB RAM, 30GB |
 
-- **Tăng**: clone template 9000 → cloud-init (`local:snippets/k8s-worker.yaml`) cài containerd/kubeadm → `kubeadm join` → đợi node Ready → gắn nhãn `node-role.kubernetes.io/worker`. (~3–4 phút)
+- **Tăng**: tạo đĩa từ cloud image Ubuntu (`images.tf`, `disk.import_from`) → cloud-init (`local:snippets/k8s-worker.yaml`) cài containerd/kubeadm → `kubeadm join` → đợi node Ready → gắn nhãn `node-role.kubernetes.io/worker`. (~3–4 phút)
 - **Giảm** (bỏ số lớn nhất trước): `kubectl drain` + `kubectl delete node` → xoá VM. (~10 giây)
-- Control-plane `k8s-cp1` (VM 201) **không** do tofu quản lý (tạo bằng `qm`).
+- Control-plane `k8s-cp1` (VM 201) cũng do tofu quản lý (`cp.tf`, **import** từ VM tạo tay), có `prevent_destroy`: mọi plan muốn xoá/tạo lại cp1 sẽ bị chặn. Không scale được (chỉ 1 control-plane).
 - **Đừng** tạo/xoá worker bằng `qm` hay web UI: state của tofu sẽ lệch với thực tế.
 
 Hàm shell `tofu` (khai báo trong `nixos/homelab.nix`) tự nạp API token cho riêng lệnh đó.
@@ -115,8 +116,8 @@ Như A rồi tự bật lại. Chỉ cần thiết khi đổi kernel/driver; đ�
 ### Không muốn VM tự bật khi mở laptop
 
 ```bash
-sudo qm set 201 --onboot 0                 # control-plane (VM tạo tay)
-# worker: sửa on_boot = false trong workers.tf rồi tofu apply  (đừng dùng qm set: tofu sẽ sửa lại)
+# cả cp1 lẫn worker đều do tofu quản lý: sửa on_boot = false trong cp.tf / workers.tf rồi tofu apply
+# (đừng dùng qm set: lần tofu apply sau sẽ sửa lại cho khớp code)
 ```
 
 ### Tóm tắt
@@ -161,7 +162,18 @@ Xem hạn: `ssh -J dwcks@192.168.101.14 dwcks@10.10.10.11 sudo kubeadm certs che
 
 ---
 
-## 5. Thành phần ngoài Git
+## 5. Tofu quản lý gì
+
+| File | Resource |
+|---|---|
+| `storage.tf` | Storage `local` (import), bật content `import` |
+| `images.tf` | Cloud image Ubuntu 24.04 (pin ngày + sha256) |
+| `cp.tf` | VM 201 `k8s-cp1` (import, `prevent_destroy`) |
+| `workers.tf` | VM worker `k8s-worker-<i>` (`workers = N`) |
+
+Không do tofu quản lý (cố ý): Proxmox/mạng/host (NixOS flake), snippet `k8s-node.yaml` (NixOS chép từ `nixos/k8s-node.yaml` mỗi lần rebuild), user/token `tofu@pve` (tofu cần nó để chạy), snippet `k8s-worker.yaml` (chứa token join).
+
+## 6. Thành phần ngoài Git
 
 | Thứ | Ở đâu | Tạo lại |
 |---|---|---|
